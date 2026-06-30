@@ -6,7 +6,7 @@
  * internal data shapes.
  *
  * Expected rules.csv columns:
- *   rule_id, scope, applies_to, type, value, stackable
+ *   rule_id, scope, applies_to, type, value, stackable, min_cart_value
  *
  * Expected cart.csv columns:
  *   item_id, product, brand, platform, base_price
@@ -33,12 +33,11 @@ export function parseRulesCSV(csvText) {
   const errors = []
 
   rows.forEach((row, i) => {
-    const rowNum = i + 2 // account for header row
+    const rowNum = i + 2
     const missing = []
 
     if (!row.rule_id) missing.push('rule_id')
     if (!row.scope) missing.push('scope')
-    if (!row.applies_to) missing.push('applies_to')
     if (!row.type) missing.push('type')
     if (row.value === undefined || row.value === '') missing.push('value')
     if (row.stackable === undefined || row.stackable === '') missing.push('stackable')
@@ -49,8 +48,14 @@ export function parseRulesCSV(csvText) {
     }
 
     const scope = row.scope.trim().toLowerCase()
-    if (scope !== 'brand' && scope !== 'platform') {
-      errors.push(`Row ${rowNum}: scope must be "brand" or "platform", got "${row.scope}"`)
+    if (scope !== 'brand' && scope !== 'platform' && scope !== 'cart') {
+      errors.push(`Row ${rowNum}: scope must be "brand", "platform", or "cart", got "${row.scope}"`)
+      return
+    }
+
+    // applies_to: required for brand/platform, null for cart
+    if (scope !== 'cart' && !row.applies_to) {
+      errors.push(`Row ${rowNum}: applies_to is required for brand/platform rules`)
       return
     }
 
@@ -69,13 +74,28 @@ export function parseRulesCSV(csvText) {
     const stackableStr = row.stackable.trim().toLowerCase()
     const stackable = stackableStr === 'true' || stackableStr === '1' || stackableStr === 'yes'
 
+    // min_cart_value: required for cart rules, null otherwise
+    let minCartValue = null
+    if (scope === 'cart') {
+      if (!row.min_cart_value) {
+        errors.push(`Row ${rowNum}: min_cart_value is required for cart rules`)
+        return
+      }
+      minCartValue = parseFloat(row.min_cart_value)
+      if (isNaN(minCartValue) || minCartValue <= 0) {
+        errors.push(`Row ${rowNum}: min_cart_value must be a positive number`)
+        return
+      }
+    }
+
     data.push({
       ruleId: row.rule_id.trim(),
       scope,
-      appliesTo: row.applies_to.trim(),
+      appliesTo: scope !== 'cart' ? row.applies_to.trim() : null,
       type,
       value,
       stackable,
+      minCartValue,
     })
   })
 
